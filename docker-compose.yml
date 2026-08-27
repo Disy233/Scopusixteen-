@@ -1,0 +1,16 @@
+# Optional local PostgreSQL for real DB wiring
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: scopusixteen
+      POSTGRES_PASSWORD: scopusixteen
+      POSTGRES_DB: scopusixteen
+    ports:
+      - "5432:5432"
+    volumes:
+      - sx_pgdata:/var/lib/postgresql/data
+
+volumes:
+  sx_pgdata:

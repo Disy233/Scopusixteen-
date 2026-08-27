@@ -1,0 +1,246 @@
+// Scopusixteen Prisma schema
+// Run: npx prisma init (if needed) then npx prisma migrate dev
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  READER
+  AUTHOR
+  REVIEWER
+  HANDLING_EDITOR
+  EDITOR_IN_CHIEF
+  JOURNAL_ADMIN
+  PUBLISHER_ADMIN
+  LIBRARIAN
+}
+
+enum PublishingMode {
+  SUBSCRIPTION
+  APC
+  HYBRID
+}
+
+enum ManuscriptStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  REVISION_REQUESTED
+  REVISED
+  ACCEPTED
+  REJECTED
+  IN_PRODUCTION
+  PUBLISHED
+  WITHDRAWN
+}
+
+enum ReviewRecommendation {
+  ACCEPT
+  MINOR_REVISION
+  MAJOR_REVISION
+  REJECT
+}
+
+enum Licence {
+  CC_BY
+  CC_BY_NC
+  CC_BY_NC_ND
+  COPYRIGHT_TRANSFER
+  EXCLUSIVE_LICENCE
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  orcid         String?  @unique
+  affiliation   String?
+  roles         Role[]
+  passwordHash  String?  // for local auth; prefer OAuth/ORCID in production
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  manuscripts   Manuscript[] @relation("AuthorManuscripts")
+  reviews       Review[]
+  decisions     Decision[]
+  subscriptions Subscription[]
+  payments      Payment[]
+}
+
+model Journal {
+  id                String         @id @default(cuid())
+  title             String
+  shortTitle        String?
+  issn              String?
+  eissn             String?
+  description       String?
+  scope             String?
+  publishingMode    PublishingMode @default(HYBRID)
+  apcAmount         Decimal?       
+  apcCurrency       String         @default("USD")
+  subscriptionPrice Decimal?
+  reviewModel       String         @default("double-blind")
+  isActive          Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  manuscripts       Manuscript[]
+  articles          Article[]
+  subscriptions     Subscription[]
+}
+
+model Manuscript {
+  id                    String           @id @default(cuid())
+  title                 String
+  abstract              String?
+  keywords              String[]
+  status                ManuscriptStatus @default(DRAFT)
+  chosenMode            PublishingMode?
+  journalId             String
+  journal               Journal          @relation(fields: [journalId], references: [id])
+  correspondingAuthorId String
+  correspondingAuthor   User             @relation("AuthorManuscripts", fields: [correspondingAuthorId], references: [id])
+  coAuthors             Json?
+  files                 ManuscriptFile[]
+  versions              ManuscriptVersion[]
+  reviews               Review[]
+  decisions             Decision[]
+  aiAnalyses            AiAnalysis[]
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  submittedAt           DateTime?
+  acceptedAt            DateTime?
+}
+
+model ManuscriptFile {
+  id            String     @id @default(cuid())
+  manuscriptId  String
+  manuscript    Manuscript @relation(fields: [manuscriptId], references: [id], onDelete: Cascade)
+  type          String     
+  filename      String
+  storageKey    String     
+  mimeType      String
+  sizeBytes     Int
+  uploadedAt    DateTime   @default(now())
+}
+
+model ManuscriptVersion {
+  id            String     @id @default(cuid())
+  manuscriptId  String
+  manuscript    Manuscript @relation(fields: [manuscriptId], references: [id], onDelete: Cascade)
+  versionNumber Int
+  label         String?
+  storageKey    String
+  createdAt     DateTime   @default(now())
+}
+
+model Review {
+  id               String                @id @default(cuid())
+  manuscriptId     String
+  manuscript       Manuscript            @relation(fields: [manuscriptId], references: [id], onDelete: Cascade)
+  reviewerId       String
+  reviewer         User                  @relation(fields: [reviewerId], references: [id])
+  invitationSentAt DateTime?
+  acceptedAt       DateTime?
+  declinedAt       DateTime?
+  dueDate          DateTime?
+  submittedAt      DateTime?
+  recommendation   ReviewRecommendation?
+  commentsToAuthor String?
+  commentsToEditor String?
+  score            Int?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+}
+
+model Decision {
+  id           String     @id @default(cuid())
+  manuscriptId String
+  manuscript   Manuscript @relation(fields: [manuscriptId], references: [id], onDelete: Cascade)
+  editorId     String
+  editor       User       @relation(fields: [editorId], references: [id])
+  decisionType String     
+  letter       String?
+  createdAt    DateTime   @default(now())
+}
+
+model Article {
+  id            String   @id @default(cuid())
+  manuscriptId  String   @unique
+  journalId     String
+  journal       Journal  @relation(fields: [journalId], references: [id])
+  title         String
+  abstract      String?
+  doi           String?  @unique
+  licence       Licence
+  publishedAt   DateTime?
+  volume        String?
+  issue         String?
+  pages         String?
+  htmlContent   String?
+  pdfKey        String?
+  isOpenAccess  Boolean  @default(false)
+  viewCount     Int      @default(0)
+  downloadCount Int      @default(0)
+  citationCount Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Subscription {
+  id              String    @id @default(cuid())
+  userId          String?
+  user            User?     @relation(fields: [userId], references: [id])
+  institutionName String?
+  journalId       String?
+  journal         Journal?  @relation(fields: [journalId], references: [id])
+  startDate       DateTime
+  endDate         DateTime?
+  status          String    
+  stripeSubId     String?
+  createdAt       DateTime  @default(now())
+}
+
+model Payment {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  manuscriptId    String?
+  type            String    
+  amount          Decimal
+  currency        String
+  status          String    
+  stripePaymentId String?
+  invoiceNumber   String?
+  createdAt       DateTime  @default(now())
+  paidAt          DateTime?
+}
+
+model AiAnalysis {
+  id           String     @id @default(cuid())
+  manuscriptId String
+  manuscript   Manuscript @relation(fields: [manuscriptId], references: [id], onDelete: Cascade)
+  type         String     
+  result       Json
+  model        String?
+  createdAt    DateTime   @default(now())
+}
+
+model InstitutionAgreement {
+  id            String    @id @default(cuid())
+  name          String
+  country       String?
+  coverageType  String    
+  discountPct   Int?
+  maxApcCovered Decimal?
+  journals      String[]
+  validFrom     DateTime
+  validTo       DateTime?
+  createdAt     DateTime  @default(now())
+}
